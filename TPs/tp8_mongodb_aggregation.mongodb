@@ -1,0 +1,227 @@
+// ==============================================================================
+// FICHIER : tp8_nosql.mongodb
+// DESCRIPTION : Script exécutable contenant les requêtes d'agrégation du TP8 
+// pour les collections 'projects' et 'students', documenté avec l'énoncé de la tâche.
+// ==============================================================================
+
+// --- SÉLECTION DE LA BASE DE DONNÉES ------------------------------------------
+use("test"); 
+
+
+// ==============================================================================
+// PARTIE 1 : Filtrage et Projection
+// ==============================================================================
+
+// 1. Afficher les projets dont la note est supérieure ou égale à 15. [cite: 4]
+db.projects.aggregate([
+    { $match: { grade: { $gte: 15 } } }
+]);
+
+
+// 2. Afficher les projets appartenant au domaine "AI". [cite: 28]
+db.projects.aggregate([
+    { $match: { domain: "AI" } }
+]);
+
+
+// 3. Afficher les étudiants dont l'âge est supérieur à 23. [cite: 46]
+db.students.aggregate([
+    { $match: { age: { $gt: 23 } } }
+]);
+
+
+// 4. Afficher uniquement le nom et la ville des étudiants. [cite: 74]
+db.students.aggregate([
+    { $project: { _id: 0, name: 1, city: 1 } }
+]);
+
+
+// 5. Afficher le titre du projet et un champ performance égal à grade * duration. [cite: 86]
+db.projects.aggregate([
+    // Correction de la syntaxe du $project de la source [cite: 87]
+    { $project: { title: 1, _id: 0, performance: { $multiply: ["$grade", "$duration"] } } }
+]);
+
+
+// ==============================================================================
+// PARTIE 2 : Regroupement ($group)
+// ==============================================================================
+
+// 6. Calculer le nombre total de projets par domaine. [cite: 90]
+db.projects.aggregate([
+    { $group: { _id: "$domain", result: { $sum: 1 } } }
+]);
+
+
+// 7. Calculer la durée totale des projets par étudiant. [cite: 100]
+db.projects.aggregate([
+    { $group: { _id: "$studentId", result: { $sum: "$duration" } } }
+]);
+
+
+// 8. Calculer la note moyenne des projets par domaine. [cite: 107]
+db.projects.aggregate([
+    { $group: { _id: "$domain", result: { $avg: "$grade" } } }
+]);
+
+
+// 9. Calculer la note maximale et la note minimale par domaine. [cite: 117]
+// Correction de la syntaxe des accumulateurs dans $group [cite: 118]
+db.projects.aggregate([
+    { $group: { _id: "$domain", max_grade: { $max: "$grade" }, min_grade: { $min: "$grade" } } }
+]);
+
+
+// 10. Calculer la durée totale des projets par domaine uniquement pour les projets dont la note est
+// supérieure ou égale à 15, et afficher uniquement le domaine et la durée totale. [cite: 123]
+db.projects.aggregate([
+    { $match: { grade: { $gte: 15 } } },
+    { $group: { _id: "$domain", sum_duree: { $sum: "$duration" } } },
+    { $project: { domain: "$_id", sum_duree: 1, _id: 0 } }
+]);
+
+
+// ==============================================================================
+// PARTIE 3 : Jointures ($lookup)
+// ==============================================================================
+
+// 11. Afficher les projets avec les informations complètes de l'étudiant associé. [cite: 127]
+db.projects.aggregate([
+    { 
+        $lookup: {
+            from: "students", 
+            localField: "studentId", 
+            foreignField: "_id", 
+            as: "etudiantInfo" 
+        } 
+    }
+]);
+
+
+// 12. Afficher les projets avec le nom et la ville de l'étudiant. [cite: 154]
+db.projects.aggregate([
+    { 
+        $lookup: {
+            from: "students", 
+            localField: "studentId", 
+            foreignField: "_id", 
+            as: "etudiantInfo" 
+        } 
+    },
+    { $project: { title: 1, "etudiantInfo.name": 1, "etudiantInfo.city": 1 } }
+]);
+
+
+// 13. Afficher le nombre de projets par ville. [cite: 169]
+db.projects.aggregate([
+    { 
+        $lookup: {
+            from: "students", 
+            localField: "studentId", 
+            foreignField: "_id", 
+            as: "etudiantInfo" 
+        } 
+    },
+    // Le regroupement se fait sur le tableau 'etudiantInfo.city' qui sera décomposé implicitement lors du groupement
+    { $group: { _id: "$etudiantInfo.city", countProject: { $sum: 1 } } }
+]);
+
+
+// 14. Calculer la note moyenne des projets par département. [cite: 176]
+db.projects.aggregate([
+    { 
+        $lookup: {
+            from: "students", 
+            localField: "studentId", 
+            foreignField: "_id", 
+            as: "etudiantInfo" 
+        } 
+    },
+    // Correction de la syntaxe du $group de la source [cite: 177]
+    { $group: { _id: "$etudiantInfo.department", ProjectAvgGrade: { $avg: "$grade" } } }
+]);
+
+
+// ==============================================================================
+// PARTIE 4 : Décomposition ($unwind) et Regroupement Avancé ($bucket, $bucketAuto)
+// ==============================================================================
+
+// 15. Après jointure avec les étudiants, afficher le nombre de projets par ville en utilisant la
+// décomposition des tableaux. (Note : La requête dans la source calcule la note moyenne par département) [cite: 182, 184]
+db.projects.aggregate([
+    { 
+        $lookup: {
+            from: "students", 
+            localField: "studentId", 
+            foreignField: "_id", 
+            as: "etudiantInfo" 
+        } 
+    },
+    { $unwind: "$etudiantInfo" }, 
+    // Représente le pipeline de la source [cite: 185, 186]
+    { $group: { _id: "$etudiantInfo.department", countProject: { $avg: "$grade" } } } 
+]);
+
+
+// 16. Afficher les projets réalisés par les étudiants habitant à "Agadir". [cite: 191]
+db.projects.aggregate([
+    { 
+        $lookup: {
+            from: "students", 
+            localField: "studentId", 
+            foreignField: "_id", 
+            as: "etudiantInfo" 
+        } 
+    },
+    { $unwind: "$etudiantInfo" }, 
+    { $match: { "etudiantInfo.city": "Agadir" } }
+]);
+
+
+// 17. Regrouper les projets en catégories selon la note à l'aide de $bucket. [cite: 237]
+db.projects.aggregate([
+    { 
+        $bucket: {
+            groupBy: "$grade", 
+            boundaries: [13, 15, 17], 
+            default: "autres",
+            output: { totalProjects: { $sum: 1 } }
+        }
+    }
+]);
+
+
+// 18. Regrouper automatiquement les projets en trois catégories selon la durée à l'aide de
+// $bucketAuto. (Utilise $grade dans la source) [cite: 244]
+db.projects.aggregate([
+    { 
+        $bucketAuto: {
+            groupBy: "$grade",
+            buckets: 3,
+            output: { totalProjects: { $sum: 1 } }
+        }
+    }
+]);
+
+
+// ==============================================================================
+// PARTIE 6 : Tri, Skip et Limit
+// ==============================================================================
+
+// 19. Calculer la note moyenne par domaine, trier les résultats par note décroissante, ignorer le
+// premier résultat et afficher uniquement les deux suivants. [cite: 256]
+db.projects.aggregate([
+    { $group: { _id: "$domain", avgGrade: { $avg: "$grade" } } },
+    { $sort: { avgGrade: -1 } },
+    { $skip: 1 },
+    { $limit: 2 }
+]);
+
+
+// 20. Après jointure avec les étudiants, trier les projets par note décroissante et afficher uniquement
+// les deux meilleurs projets. [cite: 260]
+db.projects.aggregate([
+    { $lookup: { from: "students", localField: "studentId", foreignField: "_id", as: "studentsInfo" } },
+    { $sort: { grade: -1 } },
+    { $limit: 2 }
+]);
